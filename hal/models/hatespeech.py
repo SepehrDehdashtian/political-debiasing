@@ -33,11 +33,11 @@ class EncHateSpeech(nn.Module):  # hdl:128 r:1
         super().__init__()
 
         self.enc_equal = nn.Sequential(
-            # nn.Linear(ndim, hdl),
-            # nn.PReLU(),
+            nn.Linear(ndim, hdl),
+            nn.PReLU(),
             # nn.Linear(hdl, hdl // 2),
             # nn.PReLU(),
-            nn.Linear(ndim, r)
+            nn.Linear(hdl, r)
         )
 
     def forward(self, x, y=None):
