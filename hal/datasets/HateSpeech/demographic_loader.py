@@ -31,6 +31,7 @@ class PrepareData:
             
         y = torch.from_numpy(df["y"].values).reshape(-1).cuda()
         s = torch.from_numpy(df["s"].values).reshape(-1).cuda()
+        
         return {"x": x_out, "y": y, "s": s}
             
     def load_data(self) -> dict:
@@ -59,6 +60,10 @@ class PrepareData:
                 data[split] = self.process_split(data[split])
 
             torch.save(data, f"{os.path.dirname(self.opts.dataset_options['path'])}/distilbert_features.pt")
+
+            print("Train Random Chance = ", )
+            print("Val Random Chance = ", )
+            print("Test Random Chance = ", )
 
         return data
 

@@ -20,5 +20,6 @@ from .celebset                      import *
 from .toygraph                      import *
 from .credit                        import *
 from .celeba                        import *
+from .hatespeech                    import *
 
 

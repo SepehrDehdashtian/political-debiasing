@@ -6,10 +6,10 @@ from collections import OrderedDict
 import hal.losses as losses
 from control.base import BaseClass
 
-__all__ = ['EndToEndARLEO']
+__all__ = ['EndToEndARLDPV']
 
 
-class EndToEndARLEO(BaseClass):
+class EndToEndARLDPV(BaseClass):
     def __init__(self, opts, dataloader):
         super().__init__(opts, dataloader)
 
@@ -22,6 +22,8 @@ class EndToEndARLEO(BaseClass):
         else:
             z = self.encoder(x)
 
+        # z = self.encoder(features)
+
         y_hat = self.target(z)
 
         loss_tgt = self.criterion['target'](y_hat, y)
@@ -29,12 +31,12 @@ class EndToEndARLEO(BaseClass):
         opt = self.optimizers()
 
         if self.current_epoch >= self.hparams.control_epoch:
-            s_hat = self.adversary(z[mask])
+            s_hat = self.adversary(z)
             
             if self.hparams.loss_type['adversary'] == 'Classification':
-                loss_ctl = self.criterion['adversary'](s_hat.squeeze(), s[mask].squeeze())
+                loss_ctl = self.criterion['adversary'](s_hat.squeeze(), s.squeeze())
             else:
-                loss_ctl = self.criterion['adversary'](s_hat.squeeze(), s[mask].float().squeeze())
+                loss_ctl = self.criterion['adversary'](s_hat.squeeze(), s.float().squeeze())
         else:
             loss_ctl = torch.zeros_like(loss_tgt)
 
@@ -54,14 +56,18 @@ class EndToEndARLEO(BaseClass):
         
         if self.current_epoch >= self.hparams.control_epoch:
             for _ in range(self.hparams.num_adv_train_iters):
-                features = self.feature_extractor(x)
-                z = self.encoder(features)
-                s_hat = self.adversary(z[mask])
+                if not self.feature_extractor is None:
+                    features = self.feature_extractor(x)
+                    z = self.encoder(features)
+                else:
+                    z = self.encoder(x)
+                # z = self.encoder(features)
+                s_hat = self.adversary(z)
                 
                 if self.hparams.loss_type['adversary'] == 'Classification':
-                    loss_ctl = self.criterion['adversary'](s_hat.squeeze(), s[mask].squeeze())
+                    loss_ctl = self.criterion['adversary'](s_hat.squeeze(), s.squeeze())
                 else:
-                    loss_ctl = self.criterion['adversary'](s_hat.squeeze(), s[mask].float().squeeze())
+                    loss_ctl = self.criterion['adversary'](s_hat.squeeze(), s.float().squeeze())
 
                 opt[3].zero_grad()
                 self.manual_backward(loss_ctl)
@@ -78,7 +84,7 @@ class EndToEndARLEO(BaseClass):
             'loss_tgt': {'value': loss_tgt.detach(), 'numel': len(x)},
             'loss_ctl': {'value': loss_ctl.detach(), 'numel': len(x)},
             'y_hat': y_hat.detach(),
-            'x' : features.detach(),
+            # 'x' : features.detach(),
             'z' : z.detach(),
             'y': y.detach(),
             's': s.detach(),
@@ -92,22 +98,24 @@ class EndToEndARLEO(BaseClass):
         x, y, s = batch
 
 
-        mask = (y == 1)
+        if not self.feature_extractor is None:
+            features = self.feature_extractor(x)
+            z = self.encoder(features)
+        else:
+            z = self.encoder(x)
 
-        features = self.feature_extractor(x)
-
-        z = self.encoder(features)
+        # z = self.encoder(features)
 
         y_hat = self.target(z)
         loss_tgt = self.criterion['target'](y_hat, y)
 
         s_hat = self.adversary(z)
-
         loss_ctl = self.criterion['adversary'](s_hat.squeeze(), s.squeeze())
+
 
         output = OrderedDict({
             'loss': loss_tgt.detach(),
-            'x' : features.detach(),
+            # 'x' : features.detach(),
             's': s,
             's_hat': s_hat,
             'y_hat': y_hat,
@@ -122,9 +130,13 @@ class EndToEndARLEO(BaseClass):
     def test_step(self, batch, _):
         x, y, s = batch
 
-        features = self.feature_extractor(x)
+        if not self.feature_extractor is None:
+            features = self.feature_extractor(x)
+            z = self.encoder(features)
+        else:
+            z = self.encoder(x)
 
-        z = self.encoder(features)
+        # z = self.encoder(features)
 
         y_hat = self.target(z)
         loss_tgt = self.criterion['target'](y_hat, y)
@@ -146,4 +158,3 @@ class EndToEndARLEO(BaseClass):
         })
 
         return output
-
