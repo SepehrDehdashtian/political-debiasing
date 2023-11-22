@@ -346,7 +346,7 @@ class BaseClass(pl.LightningModule):
 
 
         print('saving z ...')
-        if self.hparams.log_z: self.log_z_s_y(outputs, 'train')
+        # if self.hparams.log_z: self.log_z_s_y(outputs, 'train')
         print('saving z is done!')
 
         log_dict["epoch"] = self.current_epoch

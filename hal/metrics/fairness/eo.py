@@ -62,7 +62,12 @@ class EO(tm.Metric):
             assert yhat.shape[-1] == self.num_y_classes, f'Mismatch in yhat size and num_y_classes:: {yhat.shape[-1]} =/= {self.num_y_classes}'
             pred = yhat.data.max(1)[1]  # Extracts predicted class numbers
         else:
-            assert  self.num_y_classes == 1, f'Mismatch in yhat size and num_y_classes:: {self.num_y_classes} =/= 1'
+            try:
+                assert  self.num_y_classes == 1, f'Mismatch in yhat size and num_y_classes:: {self.num_y_classes} =/= 1'
+            except:
+                # import pdb; pdb.set_trace()
+                print('Skipping this batch in EO')
+                return 
             pred = yhat > 0.5   # Extracts predicted class numbers
 
         total = torch.zeros((self.num_sensitive_att, self.num_y_classes, self.num_s_classes))

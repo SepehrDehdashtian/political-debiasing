@@ -9,7 +9,7 @@ from torch import nn
 # # from torch_geometric.nn import GINConv
 # from dgl.nn import GINConv
 
-__all__ = ['EncHateSpeech', 'TgtHateSpeech', 'SmallTgtHateSpeech', 'SmallTgtHateSpeech2', 'AdvHateSpeech', 'HateSpeechEmbeddingYS']
+__all__ = ['EncHateSpeech', 'TgtHateSpeech', 'TgtHateSpeech2', 'SmallTgtHateSpeech', 'SmallTgtHateSpeech2', 'AdvHateSpeech', 'HateSpeechEmbeddingYS']
 
 
 # class EncHateSpeech(nn.Module):  # hdl:128 r:1
@@ -51,6 +51,26 @@ class TgtHateSpeech(nn.Module):  # hdl:128
 
         self.dec_equal2 = nn.Sequential(
             nn.Linear(r, hdl),
+            nn.PReLU(),
+            nn.Linear(hdl, hdl // 2),
+            nn.PReLU(),
+            nn.Linear(hdl // 2, nout)
+        )
+
+    def forward(self, z, y=None):
+        out = self.dec_equal2(z)
+        return out
+
+class TgtHateSpeech2(nn.Module):  # hdl:128
+    def __init__(self, nout, r, hdl):
+        super().__init__()
+
+        self.dec_equal2 = nn.Sequential(
+            nn.LayerNorm(r),
+            nn.Linear(r, hdl),
+            nn.PReLU(),
+            nn.LayerNorm(hdl),
+            nn.Linear(hdl, hdl),
             nn.PReLU(),
             nn.Linear(hdl, hdl // 2),
             nn.PReLU(),

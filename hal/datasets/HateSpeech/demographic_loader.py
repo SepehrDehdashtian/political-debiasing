@@ -7,7 +7,7 @@ import os
 import torch
 from sklearn.model_selection import train_test_split
 import datasets
-from transformers import DistilBertTokenizer, DistilBertModel, BertModel, BertTokenizer
+from transformers import DistilBertTokenizer, DistilBertModel, BertTokenizer, BertModel, RobertaModel, RobertaTokenizer
 import torch
 from tqdm.auto import tqdm 
 
@@ -16,15 +16,32 @@ __all__ = ['HateDemLoader']
 class PrepareData:
     def __init__(self, opts):
         self.opts = opts
-        # self.tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
-        # self.encoder = DistilBertModel.from_pretrained("distilbert-base-uncased").cuda()
-        # self.tokenizer = BertTokenizer.from_pretrained("distilbert-base-uncased")
-        # self.encoder = BertModel.from_pretrained("distilbert-base-uncased").cuda()
-        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-        self.encoder = BertModel.from_pretrained("bert-base-uncased").cuda()
         
-        # self.feature_file_extension = "distilbert_features.pt"
-        self.feature_file_extension = "distilbert_features_pool.pt"
+        if opts.dataset_options["language_model"] == "distilbert":
+            self.tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
+            self.encoder = DistilBertModel.from_pretrained("distilbert-base-uncased").cuda()
+            self.feature_file_extension = "distilbert_features"
+            
+        elif opts.dataset_options["language_model"] == "bert":
+            self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+            self.encoder = BertModel.from_pretrained("bert-base-uncased").cuda()
+            self.feature_file_extension = "bert_features"
+            
+        elif opts.dataset_options["language_model"] == "roberta":
+            self.tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+            self.encoder = RobertaModel.from_pretrained("roberta-base").cuda()
+            self.feature_file_extension = "roberta_features"
+            
+        else:
+            raise ValueError(opts.dataset_options["language_model"])
+        
+        # self.encode_mode = "pool"
+        self.encode_mode = "cls"
+
+        if self.encode_mode == "pool":
+            self.feature_file_extension += "_pool.pt"
+        else:
+            self.feature_file_extension += ".pt"
     
     
     def _tokenize(self, text):
@@ -32,9 +49,11 @@ class PrepareData:
         return self.tokenizer(text, add_special_tokens=True, padding="max_length", max_length=64, return_attention_mask=True, truncation="longest_first", return_tensors="pt")
     
     def _encode(self, input_ids, attention_mask):
-        # return self.encoder(input_ids=input_ids.cuda(), attention_mask=attention_mask.cuda()).last_hidden_state[0, 0]
-        return self.encoder(input_ids=input_ids.cuda(), attention_mask=attention_mask.cuda())[1]
-    
+        if self.encode_mode == "pool":
+            return self.encoder(input_ids=input_ids.cuda(), attention_mask=attention_mask.cuda())[1]
+        else:
+            return self.encoder(input_ids=input_ids.cuda(), attention_mask=attention_mask.cuda()).last_hidden_state[0, 0]
+        
     @torch.no_grad()
     def process_split(self, df, batch_size=256):
         x_out = torch.zeros((df.shape[0], 768), device='cuda:0')
@@ -46,9 +65,9 @@ class PrepareData:
             # import pdb; pdb.set_trace()
             x_out[i * batch_size: (i + 1) * batch_size, :] = self._encode(input_ids=x["input_ids"], attention_mask=x["attention_mask"])
             
-        y = torch.from_numpy(df["y"].values).reshape(-1).cuda()
-        s = torch.from_numpy(df["s"].values).reshape(-1).cuda()
-        return {"x": x_out, "y": y, "s": s}
+        y = torch.from_numpy(df["y"].values).reshape(-1)
+        s = torch.from_numpy(df["s"].values).reshape(-1)
+        return {"x": x_out.cpu(), "y": y, "s": s}
             
     def load_data(self) -> dict:
         feature_file = f"{os.path.dirname(self.opts.dataset_options['path'])}/{self.feature_file_extension}"
