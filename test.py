@@ -55,8 +55,8 @@ def main():
 
     dataloader = getattr(datasets, args.dataset)(args)
     model = getattr(control, args.control_type)(args, dataloader)
-
     ckpt_path = args.ckpt_path
+    # import pdb; pdb.set_trace()
     assert ckpt_path is not None and os.path.exists(ckpt_path), "Must provide ckpt_path to run test."
     
     ckpt = torch.load(ckpt_path, map_location="cpu")

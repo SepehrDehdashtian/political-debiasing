@@ -35,8 +35,8 @@ class PrepareData:
         else:
             raise ValueError(opts.dataset_options["language_model"])
         
-        # self.encode_mode = "pool"
-        self.encode_mode = "cls"
+        self.encode_mode = "pool"
+        # self.encode_mode = "cls"
 
         if self.encode_mode == "pool":
             self.feature_file_extension += "_pool.pt"

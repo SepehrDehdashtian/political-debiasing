@@ -773,16 +773,20 @@ class BaseClass(pl.LightningModule):
 
 
 
-    def test_step_end(self, step_output):
-        if self.hparams.test_flag.lower() == 'test':
-            name = 'test'
-        elif self.hparams.test_flag.lower() == 'whole':
-            name = 'test_whole'
-
+    def test_step_end(self, step_output):   
+        # # TODO: It is a hack to log the validation data into the results.csv file. 
+        # # Fix it later: the problem is that I want to train a Logistic Regression classifier 
+        # # when I have all the train Z (train_epoch_end) and them use this for the validation_step but 
+        # # apprently validation_step runs before train_epoch_end.    
+        # if "timm" in self.hparams.model_type.keys():
+        #     self.validation_step_end(step_output)
+        #     return
+        # else:
+        #     pass
 
         returned = list(step_output.keys())
         loss = step_output["loss"]
-        self.log(f'{name}_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log('test_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
 
 
         for key in ['loss_tgt', 'loss_tgt_T', 'loss_tgt_S', 'loss_ctl', 'loss_laplacian', 'dep_zy', 'dep_zs', 'proj_y', 'proj_s']:
@@ -792,23 +796,14 @@ class BaseClass(pl.LightningModule):
                 else:
                     loss = step_output[key]
 
-                self.log(f'{name}_{key}', loss, on_step=False, on_epoch=True, prog_bar=True)
+                self.log(f'test_{key}', loss, on_step=False, on_epoch=True, prog_bar=True)
 
         if all([_ in returned for _ in ['s', 's_hat']]):
             if isinstance(step_output["loss_ctl"], dict):
                 loss_ctl = step_output["loss_ctl"]["value"]
             else:
                 loss_ctl = step_output["loss_ctl"]
-            self.log(f'{name}_loss_ctl', loss_ctl, on_step=False, on_epoch=True, prog_bar=True)
-
-
-        if all([_ in returned for _ in ['z', 'y']]):
-            z = step_output["z"]
-            y = step_output["y"]
-
-            for met_name, met_ctl in self.metric_control["trn"].items():
-                if "DEP_ZY" in met_name or "ZY" in met_name:
-                    met_ctl.update(z,y)
+            self.log('test_loss_ctl', loss_ctl, on_step=False, on_epoch=True, prog_bar=True)
 
 
         if all([_ in returned for _ in ['s', 's_hat']]):
@@ -826,10 +821,22 @@ class BaseClass(pl.LightningModule):
             y = step_output["y"]
 
             # This means we are not in DA setting
-            for _, met_tgt in self.metric_target["test"].items():
-                if len(y) == 0: print(met_tgt)
-                if len(y_hat) == 0: print(met_tgt)
-                met_tgt.update(y_hat, y)
+            for met_name, met_tgt in self.metric_target["test"].items():
+                if not "SGAccuracy" in met_name:
+                    if len(y) == 0: print(met_tgt)
+                    if len(y_hat) == 0: print(met_tgt)
+                    met_tgt.update(y_hat, y)
+
+        if all([_ in returned for _ in ['y_hat', 'y', 's']]):
+            y_hat = step_output["y_hat"]
+            y = step_output["y"]
+            s = step_output["s"]
+           
+            for met_name, met_tgt in self.metric_target["test"].items():
+                if "SGAccuracy" in met_name:
+                    if len(y) == 0: print(met_tgt)
+                    if len(y_hat) == 0: print(met_tgt)
+                    met_tgt.update(y, y_hat, s)
 
 
         if all([_ in returned for _ in ['s', 'y_hat']]):
@@ -867,13 +874,21 @@ class BaseClass(pl.LightningModule):
                 if "alpha_beta" in met_name or "alpha_lin" in met_name or "lin_beta" in met_name or "lin_lin" in met_name or "DEP_ZS" in met_name:
                     met_ctl.update(z, s)
 
+
+        if all([_ in returned for _ in ['z', 'y']]):
+            z = step_output["z"]
+            y = step_output["y"]
+
+            for met_name, met_ctl in self.metric_control["test"].items():
+                if "DEP_ZY" in met_name or "ZY" in met_name:
+                    met_ctl.update(z,y)
+
         if all([_ in returned for _ in ['x', 's']]):
             x = step_output["x"]
             s = step_output["s"]
             for met_name, met_ctl in self.metric_control["test"].items():
                 if "XS" in met_name or "DEP_XS" in met_name:
                     met_ctl.update(x,s)
-
 
         if all([_ in returned for _ in ['x', 'y']]):
             x = step_output["x"]
@@ -884,14 +899,28 @@ class BaseClass(pl.LightningModule):
 
 
     def test_epoch_end(self, outputs):
-        if self.hparams.test_flag.lower() == 'test':
-            name = 'test'
-        elif self.hparams.test_flag.lower() == 'whole':
-            name = 'test_whole'
+
+        # # TODO: It is a hack to log the validation data into the results.csv file. 
+        # # Fix it later: the problem is that I want to train a Logistic Regression classifier 
+        # # when I have all the train Z (train_epoch_end) and them use this for the validation_step but 
+        # # apprently validation_step runs before train_epoch_end.    
+        # if "timm" in self.hparams.model_type.keys():
+        #     self.validation_epoch_end(outputs)
+        #     return
+        # else:
+        #     pass
+
+        log_dict = self.weighted_avg_loss(outputs)
 
         if self.hparams.log_z: self.log_z_s_y(outputs, 'test')
 
-        log_dict = self.weighted_avg_loss(outputs)
+        # If the flags are True, save the features, labels, and decisions to 
+        # a file in the dataset directory with the specific model name
+        if "timm" in self.hparams.model_type.keys():
+            if 'save_features' in self.hparams.model_options['timm'].keys():
+                    if self.hparams.model_options['timm']['save_features']:
+                        self.timm_log_data(outputs=outputs, split_name='test')
+
 
         log_dict["epoch"] = self.current_epoch
         if "tau" in outputs[-1].keys():
@@ -906,36 +935,41 @@ class BaseClass(pl.LightningModule):
             log_dict["alpha"] = self.hparams.alpha
         if self.hparams.gamma is not None:
             log_dict["gamma"] = self.hparams.gamma
-        if self.hparams.amc_s is not None:
+        if hasattr(self.hparams, 'amc_s') and self.hparams.amc_s is not None:
             log_dict["amc_s"] = self.hparams.amc_s
-        if self.hparams.amc_y is not None:
+        if hasattr(self.hparams, 'amc_y') and self.hparams.amc_y is not None:
             log_dict["amc_y"] = self.hparams.amc_y
+        if hasattr(self.hparams, 'kernel_x_options') and 'rff_dim' in self.hparams.kernel_x_options.keys():
+            log_dict["drff"] = self.hparams.kernel_x_options['rff_dim']
+        if hasattr(self.hparams, 'batch_size_train'):
+            log_dict["batch_size"] = self.hparams.batch_size_train
         
 
         log_dict["seed"] = self.hparams.manual_seed
-        log_file = os.path.join(self.hparams.logs_dir, f"{name}_loss_log.csv")
+        log_file = os.path.join(self.hparams.logs_dir, "test_loss_log.csv")
 
         misc.dump_log_dict(log_dict, log_file)
 
-        if self.isLastValEpoch():
-            self.add_to_results_dict(log_dict, f'{name}')
+        self.add_to_results_dict(log_dict, 'test')
 
         log_dict = {}
 
         for met_name, met_tgt in self.metric_target["test"].items():
+            # print('val', met_name)
             score = met_tgt.compute()
             if isinstance(score, dict):
                 for sc_id, sc_val in score.items():
-                    self.log(f"{name}_tgt_"+sc_id + "_" + met_name, sc_val, on_step=False, on_epoch=True, prog_bar=True)
-                    log_dict["tgt_"+sc_id + "_" + met_name] = sc_val.item()
+                    self.log("test_tgt_"+sc_id + "_" + met_name, sc_val, on_step=False, on_epoch=True, prog_bar=True)
+                    log_dict["tgt_"+sc_id + "_" + met_name] = sc_val.item() if torch.is_tensor(sc_val) else sc_val
             else:
-                self.log(f"{name}_tgt_" + met_name, score, on_step=False, on_epoch=True, prog_bar=True)
+                self.log("test_tgt_" + met_name, score, on_step=False, on_epoch=True, prog_bar=True)
                 log_dict["tgt_" + met_name] = score.item()
             met_tgt.reset()
 
         for met_name, met_ctl in self.metric_control["test"].items():
             # print(met_name)
             try:
+                # print('val', met_name)
                 score = met_ctl.compute()
             except Exception as e:
                 print(e)
@@ -944,16 +978,16 @@ class BaseClass(pl.LightningModule):
 
             if isinstance(score, dict):
                 for sc_id, sc_val in score.items():
-                    self.log(f'{name}_ctl_'+sc_id + "_" + met_name, sc_val, on_step=False, on_epoch=True, prog_bar=True)
+                    self.log('test_ctl_'+sc_id + "_" + met_name, sc_val, on_step=False, on_epoch=True, prog_bar=True)
                     log_dict["ctl_"+sc_id + "_" + met_name] = sc_val.item()
             else:
-                self.log(f'{name}_ctl_' + met_name, score, on_step=False, on_epoch=True, prog_bar=True)
-                log_dict["ctl_" + met_name] = score.item()
+                self.log('test_ctl_' + met_name, score, on_step=False, on_epoch=True, prog_bar=True)
+                log_dict["ctl_"+met_name] = score.item()
             met_ctl.reset()
         
 
-        if self.isLastValEpoch():
-            self.add_to_results_dict(log_dict, f'{name}')
+        self.add_to_results_dict(log_dict, 'test')
+        self.dump_results_dict(test=True)
 
 
         log_dict["epoch"] = self.current_epoch
@@ -971,70 +1005,90 @@ class BaseClass(pl.LightningModule):
             log_dict["gamma"] = self.hparams.gamma
 
         log_dict["seed"] = self.hparams.manual_seed
-        log_file = os.path.join(self.hparams.logs_dir, f"{name}_metric_log.csv")
+        log_file = os.path.join(self.hparams.logs_dir, "test_metric_log.csv")
 
         misc.dump_log_dict(log_dict, log_file)
 
 
         ##################### Visualizing the graph ##########################
-        if self.hparams.dataset_options['graph']['visualize']:
-            X, Y, S = self.dataloader.return_X_Y_S()
-            Z = self.encoder(X).cpu().numpy()
+        if 'graph' in self.hparams.dataset_options.keys():
+            if self.hparams.dataset_options['graph']['visualize']:
+                X, Y, S = self.dataloader.return_X_Y_S()
+                Z = self.encoder(X).cpu().numpy()
 
-            if Z.shape[-1] > 3:
-                pca = PCA(n_components=3)
+                if Z.shape[-1] > 3:
+                    pca = PCA(n_components=3)
 
-                Z = pca.fit_transform(Z)
+                    Z = pca.fit_transform(Z)
 
-            pos_keys = list(self.dataloader.nxG.nodes.keys())
-            pos_dict = dict(zip(pos_keys, Z))
+                pos_keys = list(self.dataloader.nxG.nodes.keys())
+                pos_dict = dict(zip(pos_keys, Z))
 
 
-            ################### Draw the graph and save it ####################
-            plt.clf()
-            if Z.shape[-1] != 1:
-                nx.draw_networkx(self.dataloader.nxG, node_color=self.dataloader.colors_s, with_labels=False, label='S', node_size=2, pos=pos_dict, width=0.005, edge_color='grey', alpha=0.5)
-
-                plt.close()
-            else:    
-                # nx.draw_networkx_nodes(self.dataloader.nxG, node_color=self.dataloader.colors_s, with_labels=False, label='S', node_size=2, pos=pos_dict)
-                z_df = pd.DataFrame(data={'z': Z.squeeze().tolist(), 'class': Y.squeeze().tolist(), 'sensitive': S.squeeze().tolist()})
-                
-                ###### Plot the distributions ######
-                sns.set_theme()
-                # sns.jointplot(data=z_df, x="z", hue='sensitive')
-                sns.displot(data=z_df, x="z", hue='sensitive', kind='kde', fill=True)
-                plt.savefig(os.path.join(self.hparams.figs_dir, f"Epoch{self.current_epoch}-Graph-s.pdf"))
+                ################### Draw the graph and save it ####################
                 plt.clf()
-                plt.close()
-                # sns.jointplot(data=z_df, x="z", hue='class')
-                sns.displot(data=z_df, x="z", hue='class', kind='kde', fill=True)
-                plt.savefig(os.path.join(self.hparams.figs_dir, f"Epoch{self.current_epoch}-Graph-y.pdf"))
-                plt.close()
+                if Z.shape[-1] != 1:
+                    nx.draw_networkx(self.dataloader.nxG, node_color=self.dataloader.colors_s, with_labels=False, label='S', node_size=2, pos=pos_dict, width=0.005, edge_color='grey', alpha=0.5)
 
-                ###### Plot the represantation space ######
-                boundry, pred = self.find_decision_boundry()
-                z_df['pred'] = pred
+                    plt.close()
+                else:    
+                    # nx.draw_networkx_nodes(self.dataloader.nxG, node_color=self.dataloader.colors_s, with_labels=False, label='S', node_size=2, pos=pos_dict)
+                    z_df = pd.DataFrame(data={'z': Z.squeeze().tolist(), 'class': Y.squeeze().tolist(), 'sensitive': S.squeeze().tolist()})
+                    ###### Plot the distributions ######
+                    '''
+                    sns.set_theme()
+                    sns.displot(data=z_df, x="z", hue='sensitive', kind='kde', fill=True)
+                    plt.savefig(os.path.join(self.hparams.figs_dir, f"Epoch{self.current_epoch}-Graph-s.pdf"))
+                    plt.clf()
+                    plt.close()
+                    # sns.jointplot(data=z_df, x="z", hue='class')
+                    sns.displot(data=z_df, x="z", hue='class', kind='kde', fill=True)
+                    plt.savefig(os.path.join(self.hparams.figs_dir, f"Epoch{self.current_epoch}-Graph-y.pdf"))
+                    plt.close()
+                    '''
 
+                    ###### Plot the represantation space ######
+                    boundry, pred = self.find_decision_boundry()
+                    z_df['pred'] = pred
 
-                boundry_line_x = [boundry, boundry]
-                boundry_line_y = [-1.5, 1.5]
-                sns.set_theme()
-                sns.jointplot(data=z_df, x="z", y=torch.arange(-1,1,2/len(z_df['z'])).numpy().tolist(), hue='sensitive', marginal_ticks=True)
-                plt.plot(boundry_line_x, boundry_line_y)
-                plt.savefig(os.path.join(self.hparams.figs_dir, f"{name}-Z-s.pdf"))
-                plt.clf()
-                plt.close()
-                sns.jointplot(data=z_df, x="z", y=torch.arange(-1,1,2/len(z_df['z'])).numpy().tolist(), hue='class', marginal_ticks=True)
-                plt.plot(boundry_line_x, boundry_line_y)
-                plt.savefig(os.path.join(self.hparams.figs_dir, f"{name}-Z-y.pdf"))
-                plt.clf()
-                plt.close()
-                sns.jointplot(data=z_df, x="z", y=torch.arange(-1,1,2/len(z_df['z'])).numpy().tolist(), hue='pred', marginal_ticks=True)
-                plt.plot(boundry_line_x, boundry_line_y)
-                plt.savefig(os.path.join(self.hparams.figs_dir, f"{name}-Z-pred.pdf"))
-                plt.clf()
-                plt.close()
+                    boundry_line_x = [boundry, boundry]
+                    boundry_line_y = [-1.5, 1.5]
+
+                    '''
+                    sns.set_theme()
+                    sns.jointplot(data=z_df, x="z", y=torch.arange(-1,1,2/len(z_df['z'])).numpy().tolist(), hue='sensitive', marginal_ticks=True)
+                    plt.plot(boundry_line_x, boundry_line_y)
+                    plt.savefig(os.path.join(self.hparams.figs_dir, f"Epoch{self.current_epoch}-Z-s.pdf"))
+                    plt.clf()
+                    plt.close()
+                    sns.jointplot(data=z_df, x="z", y=torch.arange(-1,1,2/len(z_df['z'])).numpy().tolist(), hue='class', marginal_ticks=True)
+                    plt.plot(boundry_line_x, boundry_line_y)
+                    plt.savefig(os.path.join(self.hparams.figs_dir, f"Epoch{self.current_epoch}-Z-y.pdf"))
+                    plt.clf()
+                    plt.close()
+                    sns.jointplot(data=z_df, x="z", y=torch.arange(-1,1,2/len(z_df['z'])).numpy().tolist(), hue='pred', marginal_ticks=True)
+                    plt.plot(boundry_line_x, boundry_line_y)
+                    plt.savefig(os.path.join(self.hparams.figs_dir, f"Epoch{self.current_epoch}-Z-pred.pdf"))
+                    plt.clf()
+                    plt.close()
+                    '''
+                    sns.relplot(data=z_df, x="z", y=torch.arange(-1,1,2/len(z_df['z'])).numpy().tolist(), hue='class', style='sensitive')
+                    plt.plot(boundry_line_x, boundry_line_y)
+                    plt.title(r"$\tau = $" + str(self.hparams.tau) + "\t" + r"$\beta =$ " + str(self.hparams.beta))
+                    plt.savefig(os.path.join(self.hparams.figs_dir, f"Epoch-{self.current_epoch}-Z.pdf"), bbox_inches='tight')
+                    print(z_df['z'])
+                    if self.isLastValEpoch(): # Save the figure in the mian directory 
+                        plt.savefig(os.path.join(self.hparams.main_figs_dir, f"Z-tau-beta-{self.hparams.beta}-{self.hparams.tau}.png"), bbox_inches='tight')
+                    
+                    plt.clf()
+                    plt.close()
+
+                    sns.relplot(data=z_df, x="z", y=torch.arange(-1,1,2/len(z_df['z'])).numpy().tolist(), hue='pred', style='sensitive')
+                    plt.plot(boundry_line_x, boundry_line_y)
+                    plt.savefig(os.path.join(self.hparams.figs_dir, f"Epoch-{self.current_epoch}-Z-pred.pdf"))
+                    plt.clf()
+                    plt.close()
+
 
     def find_decision_boundry(self):
         X, Y, S = self.dataloader.return_whole_dataset()
@@ -1077,32 +1131,62 @@ class BaseClass(pl.LightningModule):
         for k, v in inp_dict.items():
             self.results_dict[split][k] = v
 
-    def dump_results_dict(self):
-        # Do not log in the results.csv when the experiment is a tuning process
-        if not self.hparams.tune_flag:
-            results_file = os.path.join(self.hparams.result_path, 'results.csv')
-            edited_dict = dict()
-            edited_dict['seed'] = self.results_dict['train']['seed']
-            edited_dict['tau'] = self.results_dict['train']['tau']
-            edited_dict['beta'] = self.results_dict['train']['beta']
-            edited_dict['alpha'] = self.results_dict['train']['alpha']
-            edited_dict['epoch'] = self.results_dict['train']['epoch']
-            if not self.hparams['gamma'] is None:
-                edited_dict['gamma'] = self.hparams['gamma']
-            if hasattr(self.hparams, 'auto_dim_z'):
-                edited_dict['dim_z'] = self.hparams.auto_dim_z
+    def dump_results_dict(self, test=False):
 
-            for split, split_dict in self.results_dict.items():
-                for k, v in split_dict.items():
-                    if not k in edited_dict.keys():
-                        edited_dict[split + '_' + k] = v
+        if not test and not "timm" in self.hparams.model_type.keys():
+            # Do not log in the results.csv when the experiment is a tuning process
+            if not self.hparams.tune_flag:
+                results_file = os.path.join(self.hparams.result_path, 'results.csv')
+                edited_dict = dict()
+                edited_dict['seed'] = self.results_dict['train']['seed']
+                edited_dict['tau'] = self.results_dict['train']['tau']
+                edited_dict['beta'] = self.results_dict['train']['beta']
+                edited_dict['alpha'] = self.results_dict['train']['alpha']
+                edited_dict['epoch'] = self.results_dict['train']['epoch']
+                if not self.hparams['gamma'] is None:
+                    edited_dict['gamma'] = self.hparams['gamma']
+                if hasattr(self.hparams, 'auto_dim_z'):
+                    edited_dict['dim_z'] = self.hparams.auto_dim_z
 
-            edited_dict['z_directory'] = self.hparams.folder_full_path
-            edited_dict['Exp. Name'] = self.hparams.exp_name
+                for split, split_dict in self.results_dict.items():
+                    for k, v in split_dict.items():
+                        if not k in edited_dict.keys():
+                            edited_dict[split + '_' + k] = v
 
-            misc.dump_results_dict(edited_dict, results_file)
-        else:
-            pass
+                edited_dict['z_directory'] = self.hparams.folder_full_path
+                edited_dict['Exp. Name'] = self.hparams.exp_name
+
+                misc.dump_results_dict(edited_dict, results_file)
+            else:
+                pass
+        elif test:
+            # Do not log in the results.csv when the experiment is a tuning process
+            if not self.hparams.tune_flag:
+                results_file = os.path.join(self.hparams.result_path, 'results.csv')
+                edited_dict = dict()
+                edited_dict['seed'] = self.results_dict['test']['seed']
+                edited_dict['tau'] = self.results_dict['test']['tau']
+                edited_dict['beta'] = self.results_dict['test']['beta']
+                edited_dict['alpha'] = self.results_dict['test']['alpha']
+                edited_dict['epoch'] = self.results_dict['test']['epoch']
+                if not self.hparams['gamma'] is None:
+                    edited_dict['gamma'] = self.hparams['gamma']
+                if hasattr(self.hparams, 'auto_dim_z'):
+                    edited_dict['dim_z'] = self.hparams.auto_dim_z
+
+                for split, split_dict in self.results_dict.items():
+                    for k, v in split_dict.items():
+                        if not k in edited_dict.keys():
+                            edited_dict[split + '_' + k] = v
+
+                edited_dict['z_directory'] = self.hparams.folder_full_path
+                edited_dict['Exp. Name'] = self.hparams.exp_name
+
+                misc.dump_results_dict(edited_dict, results_file)
+            else:
+                pass
+
+
 
 
     def isLastValEpoch(self):

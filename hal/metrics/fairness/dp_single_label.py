@@ -49,7 +49,6 @@ class DP_SingleLabel(tm.Metric):
             [5,1]
             ]  
         '''
-        # import pdb; pdb.set_trace()
 
         list_s = list_s.squeeze()
         yhat = yhat.squeeze()
@@ -149,6 +148,8 @@ class DP_SingleLabel(tm.Metric):
             if max > total_max:
                 total_max = max
             
+        
+        import pdb; pdb.set_trace()
         
         total_var     = sum_var / len(prob)
         total_avg     = torch.Tensor(avg_list).mean()
