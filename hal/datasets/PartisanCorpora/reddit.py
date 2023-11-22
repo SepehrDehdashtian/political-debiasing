@@ -41,13 +41,23 @@ class PrepareRedditData:
         else:
             raise ValueError(opts.dataset_options["language_model"])
         
+        # self.encode_mode = "pool"
+        self.encode_mode = "cls"
+
+        if self.encode_mode == "pool":
+            self.feature_file_extension += "_pool.pt"
+        else:
+            self.feature_file_extension += ".pt"
+        
     def _tokenize(self, text):
         # return self.tokenizer(text, add_special_tokens=True, return_tensors="pt", padding=True)
         return self.tokenizer(text, add_special_tokens=True, padding="max_length", max_length=64, return_attention_mask=True, truncation="longest_first", return_tensors="pt")
     
     def _encode(self, input_ids, attention_mask):
-        # return self.encoder(input_ids=input_ids.cuda(), attention_mask=attention_mask.cuda()).last_hidden_state[0, 0]
-        return self.encoder(input_ids=input_ids.cuda(), attention_mask=attention_mask.cuda())[1]
+        if self.encode_mode == "pool":
+            return self.encoder(input_ids=input_ids.cuda(), attention_mask=attention_mask.cuda())[1]
+        else:
+            return self.encoder(input_ids=input_ids.cuda(), attention_mask=attention_mask.cuda()).last_hidden_state[0, 0]
     
     @torch.no_grad()
     def process_lines(self, lines, labels, batch_size: int = 256):
@@ -60,8 +70,9 @@ class PrepareRedditData:
             x = self._tokenize(text)
             x_out[i * batch_size: (i + 1) * batch_size, :] = self._encode(input_ids=x["input_ids"], attention_mask=x["attention_mask"])
             
-        y = torch.from_numpy(labels).long()
-        return {"x": x_out.cpu(), "y": y.cpu()}
+        s = torch.from_numpy(labels).long()
+        y = torch.randint(0, 2, s.shape).long()
+        return {"x": x_out.cpu(), "y": y, "s": s}
             
     def load_data(self) -> dict:
         data_dir = self.opts.dataset_options["path"]
@@ -86,11 +97,14 @@ class PrepareRedditData:
             labels = np.zeros((N + M,), dtype=np.int32)
             labels[N:] = 1
             
-            # lines_train, lines_val, labels_train, labels_val = train_test_split(lines, labels, test_size=0.1, shuffle=True, random_state=0)
             lines_train, lines_val, labels_train, labels_val = train_test_split(lines, labels, test_size=0.1, shuffle=True, random_state=0)
             
-            data["train"] = self.process_lines(lines=lines_train, labels=labels_train)
-            data["val"] = self.process_lines(lines=lines_val, labels=labels_val)    
+            if self.opts.dataset_options["only_val"]:
+                data["val"] = self.process_lines(lines=lines_val, labels=labels_val)
+                
+            else:
+                data["train"] = self.process_lines(lines=lines_train, labels=labels_train)
+                data["val"] = self.process_lines(lines=lines_val, labels=labels_val)
 
             torch.save(data, f"{self.opts.dataset_options['path']}/{self.feature_file_extension}")
             print("Saved computed features")
@@ -111,7 +125,8 @@ class RedditDataloader:
         
         x = self.data["x"][index]
         y = self.data["y"][index]
-        return x, y, 0
+        s = self.data["s"][index]
+        return x, y, s
 
  
 class Reddit(pl.LightningDataModule):

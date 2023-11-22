@@ -193,6 +193,8 @@ def parse_args():
     parser.add_argument('--visualizer', type=str, default='VisualizerTensorboard', help='VisualizerTensorboard or VisualizerVisdom')
     parser.add_argument('--same-env', type=misc.str2bool, default='Yes', metavar='',help='does not add date and time to the visdom environment name')
 
+    parser.add_argument("--ckpt-path", type=str, default=None, help="Path to pre-trained model, for evaluation or finetuning.")
+
     config_file_copy = args.config_file
     if os.path.exists(args.config_file):
         config = configparser.ConfigParser()
