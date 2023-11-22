@@ -2,4 +2,4 @@ results/
 data/
 __pycache__/
 outputs/
-
+q*.txt
